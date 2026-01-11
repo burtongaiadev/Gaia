@@ -1,0 +1,10 @@
+services:
+  gaia:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    # For ARM64 Raspberry Pi optimization/compatibility if needed
+    # platform: linux/arm64

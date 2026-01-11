@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "gaia"
+version = "0.1.0"
+description = "High-reliability Crypto AI Bot for Raspberry Pi 5"
+authors = ["Gaia Team <anthony@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+pydantic = "^2.6.0"
+pydantic-settings = "^2.1.0"
+aiosqlite = "^0.19.0"
+pandas = "^2.2.0"
+numpy = "^1.26.0"
+python-telegram-bot = "^20.7"
+websockets = "^12.0"
+httpx = "^0.26.0"
+psutil = "^7.2.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+mypy = "^1.8.0"
+black = "^24.1.0"
+isort = "^5.13.0"
+ruff = "^0.1.15"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = [
+  "."
+]
