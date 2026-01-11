@@ -17,13 +17,20 @@ class InferenceService:
         self.mock_mode = False
 
         try:
-            # specific import sequence to support both runtime-only and full TF
+            # specific import sequence to support all TFLite runtimes
             try:
-                import tflite_runtime.interpreter as tflite
+                # 1. New Google AI Edge Runtime
+                from ai_edge_litert.interpreter import Interpreter
+                self.interpreter = Interpreter(model_path=self.model_path)
             except ImportError:
-                import tensorflow.lite as tflite
-            
-            self.interpreter = tflite.Interpreter(model_path=self.model_path)
+                try:
+                    # 2. Classic TFLite Runtime
+                    import tflite_runtime.interpreter as tflite
+                    self.interpreter = tflite.Interpreter(model_path=self.model_path)
+                except ImportError:
+                    # 3. Full TensorFlow
+                    import tensorflow.lite as tflite
+                    self.interpreter = tflite.Interpreter(model_path=self.model_path)
             self.interpreter.allocate_tensors()
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
