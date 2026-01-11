@@ -30,7 +30,7 @@ async def on_tick_processor(tick: MarketTick):
     try:
         # Update Broker State (Mark-to-Market)
         if paper_broker:
-            paper_broker.update_market_state(tick.price, tick.timestamp)
+            paper_broker.update_market_state(tick.price, tick.timestamp, tick.symbol)
             
         # Execute Strategy (Route to correct instance)
         if tick.symbol in bot_strategies:
@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
         # In real LIVE mode, we would call recovery.reconcile(broker, exchange)
         # In PAPER, our 'exchange' is the empty BacktestBroker, so nothing to reconcile yet.
         
+        telegram_service.set_broker(paper_broker)
         logger.info("PAPER Trading Environment Ready. Waiting for Ticks...")
 
     await telegram_service.start()

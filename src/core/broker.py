@@ -17,24 +17,27 @@ class BacktestBroker(IBroker):
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.trades = []
-        self.position = 0.0
-        self.current_price = 0.0
+        self.positions = {} # {symbol: size} - Multi-symbol support
+        self.last_prices = {} # {symbol: price}
         self.current_time = None
         
         # Bracket Management
         self.active_orders = [] # List of dicts representing open Limit/Stop orders
 
-    def update_market_state(self, price: float, timestamp):
-        self.current_price = price
+    def update_market_state(self, price: float, timestamp, symbol: str):
+        self.last_prices[symbol] = price
         self.current_time = timestamp
-        self._check_triggers(price, timestamp)
+        self._check_triggers(price, timestamp, symbol)
 
-    def _check_triggers(self, price: float, timestamp):
+    def _check_triggers(self, price: float, timestamp, symbol: str):
         """Check if any active orders are triggered by current price"""
         filled_bracket_ids = []
         
-        # Iterate copy to allow modification
+        # Iterate copy to allow modification. Only check orders for THIS symbol.
         for order in self.active_orders[:]:
+            if order.get('symbol') != symbol:
+                continue
+                
             trigger = False
             side = order['side']
             trigger_price = order['price']
@@ -68,25 +71,29 @@ class BacktestBroker(IBroker):
 
     def _execute_trade(self, symbol, side, size, price, timestamp, type_str):
         cost = price * size
+        current_pos = self.positions.get(symbol, 0.0)
+        
         if side == "buy":
-            self.position += size
+            self.positions[symbol] = current_pos + size
             self.balance -= cost
         elif side == "sell":
-            self.position -= size
+            self.positions[symbol] = current_pos - size
             self.balance += cost
             
         self.trades.append({
             "symbol": symbol, "side": side, "size": size, 
             "price": price, "time": timestamp, "type": type_str
         })
-        logger.info(f"[BACKTEST] FILLED-TRIGGER {side.upper()} {size} @ {price} ({type_str})")
+        logger.info(f"[BACKTEST] FILLED-TRIGGER {side.upper()} {size} {symbol} @ {price} ({type_str})")
 
     async def place_order(self, symbol: str, side: str, order_type: str, size: float, price: Optional[float] = None, params: Optional[Dict[str, Any]] = None):
-        if self.current_price <= 0:
+        last_price = self.last_prices.get(symbol, 0.0)
+        if last_price <= 0:
+            logger.warning(f"Cannot place order for {symbol}: No price data yet.")
             return
 
         # 1. Execute Main Market Order
-        fill_price = self.current_price
+        fill_price = last_price
         self._execute_trade(symbol, side, size, fill_price, self.current_time, "market")
         
         # 2. Handle Brackets (sl, tp parameters)
@@ -103,24 +110,31 @@ class BacktestBroker(IBroker):
                         "symbol": symbol, "side": exit_side, "size": size,
                         "price": sl_price, "type": "stop", "bracket_id": bracket_id
                     })
-                    logger.info(f"[BACKTEST] PLACED STOP {exit_side} @ {sl_price}")
+                    logger.info(f"[BACKTEST] PLACED STOP {exit_side} {symbol} @ {sl_price}")
                     
                 if tp_price:
                     self.active_orders.append({
                         "symbol": symbol, "side": exit_side, "size": size,
                         "price": tp_price, "type": "limit", "bracket_id": bracket_id
                     })
-                    logger.info(f"[BACKTEST] PLACED LIMIT {exit_side} @ {tp_price}")
+                    logger.info(f"[BACKTEST] PLACED LIMIT {exit_side} {symbol} @ {tp_price}")
 
     def get_position(self, symbol: str) -> float:
-        return self.position
+        return self.positions.get(symbol, 0.0)
 
     def get_stats(self):
-        equity = self.balance + (self.position * self.current_price)
+        # Calculate Equity: Balance + Sum(Position * LastPrice)
+        equity = self.balance
+        for sym, pos in self.positions.items():
+            if pos != 0:
+                price = self.last_prices.get(sym, 0.0)
+                equity += (pos * price)
+                
         pnl = equity - self.initial_balance
         return {
             "equity": equity,
+            "balance": self.balance,
             "pnl": pnl,
             "trades_count": len(self.trades),
-            "position": self.position
+            "positions": {k:v for k,v in self.positions.items() if v != 0}
         }

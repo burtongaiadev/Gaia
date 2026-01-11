@@ -23,11 +23,35 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @authorized_only
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mem = psutil.virtual_memory()
-    msg = (
-        f"✅ System Online\n"
+    msg = [
+        f"✅ Gaia Online v{settings.APP_VERSION}",
         f"🧠 Memory: {mem.percent}% used"
-    )
-    await update.message.reply_text(msg)
+    ]
+    
+    if telegram_service.broker:
+        try:
+            stats = telegram_service.broker.get_stats()
+            # Stats: equity, pnl, trades_count, positions
+            equity = stats.get('equity', 0.0)
+            pnl = stats.get('pnl', 0.0)
+            trades = stats.get('trades_count', 0)
+            positions = stats.get('positions', {})
+            
+            icon = "📈" if pnl >= 0 else "📉"
+            msg.append(f"{icon} PnL: ${pnl:.2f}")
+            msg.append(f"💰 Equity: ${equity:.2f}")
+            msg.append(f"🔢 Trades: {trades}")
+            
+            if positions:
+                pos_list = [f"{sym}: {amt:.4f}" for sym, amt in positions.items()]
+                msg.append(f"✊ Open Pos: {', '.join(pos_list)}")
+            else:
+                msg.append("😴 Market Flat")
+                
+        except Exception as e:
+            msg.append(f"⚠️ Data Error: {e}")
+            
+    await update.message.reply_text("\n".join(msg))
 
 from src.core.control import trading_control
 
@@ -42,6 +66,10 @@ async def panic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 class TelegramService:
     def __init__(self):
         self.app: Application | None = None
+        self.broker = None
+        
+    def set_broker(self, broker):
+        self.broker = broker
     
     async def start(self):
         if not settings.TELEGRAM_TOKEN:
