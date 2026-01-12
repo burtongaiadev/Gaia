@@ -68,7 +68,9 @@ async def lifespan(app: FastAPI):
         ai_service = InferenceService()
         
         # C. Initialize Risk Manager
-        risk_engine = RiskManager(min_confidence=0.5, max_position_size=5.0)
+        # We increase max_position_size because Strategies now manage risk sizing dynamically.
+        # Set to 1000.0 as a sanity limit.
+        risk_engine = RiskManager(min_confidence=0.5, max_position_size=1000.0)
         
         # Wrap the Paper Broker with SafeBroker if we want risk checks
         from src.core.risk import SafeBroker

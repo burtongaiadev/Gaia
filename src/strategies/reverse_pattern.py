@@ -115,9 +115,33 @@ class ReversePatternStrategy(Strategy):
             if current_pos >= 0 and ai_approved:
                 logger.info(f"Signal: BEARISH DETECTED on {self.symbol} (Pos: {current_pos}) | AI: {ai_approved}")
                 if self.broker:
-                    # If Long, Sell 2.0 (Flip); If Flat, Sell 1.0 (Open)
-                    qty = 1.0 if current_pos == 0 else 2.0
-                    await self.broker.place_order(self.symbol, "sell", "mkt", qty)
+                    # 1. Close Existing Long if any
+                    if current_pos > 0:
+                        await self.broker.place_order(self.symbol, "sell", "mkt", current_pos)
+                        logger.info(f"Closing Long {current_pos} on {self.symbol}")
+                    
+                    # 2. Calculate New Short Size based on Risk
+                    # SL = High of Signal Candle (c1, previous closed) + Buffer
+                    # User requested "Signal Candle". Since we enter on c0 breaking c1, c1 is the reference.
+                    sl_price = c1.high * 1.001
+                    entry_price = c0.close
+                    
+                    risk_per_unit = sl_price - entry_price
+                    
+                    # Get Account Equity
+                    stats = self.broker.get_stats()
+                    equity = stats.get('equity', 10000.0)
+                    risk_amount = equity * 0.03 # 3% Risk
+                    
+                    if risk_per_unit > 0:
+                        qty = risk_amount / risk_per_unit
+                    else:
+                        qty = 0.0 # Should not happen unless SL < Entry (impossible for Short)
+                    
+                    # 3. Open Short
+                    if qty > 0:
+                        logger.info(f"Opening Short {qty:.4f} {self.symbol} (Risk: ${risk_amount:.2f} SL: {sl_price:.2f})")
+                        await self.broker.place_order(self.symbol, "sell", "mkt", qty, params={"sl": sl_price})
 
         # --- BULLISH LOGIC ---
         is_bullish_ma_condition = c0.close < ma50 if not pd.isna(ma50) else False
@@ -153,6 +177,29 @@ class ReversePatternStrategy(Strategy):
              if current_pos <= 0 and ai_approved:
                 logger.info(f"Signal: BULLISH DETECTED on {self.symbol} (Pos: {current_pos}) | AI: {ai_approved}")
                 if self.broker:
-                    # If Short, Buy 2.0 (Flip); If Flat, Buy 1.0 (Open)
-                    qty = 1.0 if current_pos == 0 else 2.0
-                    await self.broker.place_order(self.symbol, "buy", "mkt", qty)
+                    # 1. Close Existing Short if any
+                    if current_pos < 0:
+                        await self.broker.place_order(self.symbol, "buy", "mkt", abs(current_pos))
+                        logger.info(f"Closing Short {abs(current_pos)} on {self.symbol}")
+                    
+                    # 2. Calculate New Long Size
+                    # SL = Low of Signal Candle (c1) - Buffer
+                    sl_price = c1.low * 0.999
+                    entry_price = c0.close
+                    
+                    risk_per_unit = entry_price - sl_price
+                    
+                    # Get Account Equity
+                    stats = self.broker.get_stats()
+                    equity = stats.get('equity', 10000.0)
+                    risk_amount = equity * 0.03 # 3% Risk
+                    
+                    if risk_per_unit > 0:
+                        qty = risk_amount / risk_per_unit
+                    else:
+                        qty = 0.0
+                        
+                    # 3. Open Long
+                    if qty > 0:
+                        logger.info(f"Opening Long {qty:.4f} {self.symbol} (Risk: ${risk_amount:.2f} SL: {sl_price:.2f})")
+                        await self.broker.place_order(self.symbol, "buy", "mkt", qty, params={"sl": sl_price})
