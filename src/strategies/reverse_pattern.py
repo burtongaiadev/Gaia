@@ -138,10 +138,25 @@ class ReversePatternStrategy(Strategy):
                     else:
                         qty = 0.0 # Should not happen unless SL < Entry (impossible for Short)
                     
-                    # 3. Open Short
+                    # 3. Open Short (Split into 2 TPs)
                     if qty > 0:
-                        logger.info(f"Opening Short {qty:.4f} {self.symbol} (Risk: ${risk_amount:.2f} SL: {sl_price:.2f})")
-                        await self.broker.place_order(self.symbol, "sell", "mkt", qty, params={"sl": sl_price})
+                        qty_half = qty / 2.0
+                        tp1_dist = risk_per_unit * 2.0 # risk_per_unit is positive (SL - Entry) for Shorts? 
+                        # Wait, logic above: risk_per_unit = sl_price - entry_price.
+                        # For SHORT: SL > Entry. risk_per_unit is POSITIVE.
+                        # TP Target is Entry - (2 * Risk)
+                        # So TP1 = Entry - (2 * risk_per_unit)
+                        # TP2 = Entry - (3 * risk_per_unit)
+                        
+                        tp1_price = entry_price - (risk_per_unit * 2.0)
+                        tp2_price = entry_price - (risk_per_unit * 3.0)
+                        
+                        logger.info(f"Opening Short {qty:.4f} {self.symbol} (Split TPs). Risk: ${risk_amount:.2f}")
+                        
+                        # Order A (TP1)
+                        await self.broker.place_order(self.symbol, "sell", "mkt", qty_half, params={"sl": sl_price, "tp": tp1_price})
+                        # Order B (TP2)
+                        await self.broker.place_order(self.symbol, "sell", "mkt", qty_half, params={"sl": sl_price, "tp": tp2_price})
 
         # --- BULLISH LOGIC ---
         is_bullish_ma_condition = c0.close < ma50 if not pd.isna(ma50) else False
@@ -199,7 +214,17 @@ class ReversePatternStrategy(Strategy):
                     else:
                         qty = 0.0
                         
-                    # 3. Open Long
+                    # 3. Open Long (Split into 2 TPs)
                     if qty > 0:
-                        logger.info(f"Opening Long {qty:.4f} {self.symbol} (Risk: ${risk_amount:.2f} SL: {sl_price:.2f})")
-                        await self.broker.place_order(self.symbol, "buy", "mkt", qty, params={"sl": sl_price})
+                        qty_half = qty / 2.0
+                        # For LONG: Risk = Entry - SL (Positive).
+                        # TP = Entry + (2 * Risk)
+                        tp1_price = entry_price + (risk_per_unit * 2.0)
+                        tp2_price = entry_price + (risk_per_unit * 3.0)
+                        
+                        logger.info(f"Opening Long {qty:.4f} {self.symbol} (Split TPs). Risk: ${risk_amount:.2f}")
+                        
+                        # Order A (TP1)
+                        await self.broker.place_order(self.symbol, "buy", "mkt", qty_half, params={"sl": sl_price, "tp": tp1_price})
+                        # Order B (TP2)
+                        await self.broker.place_order(self.symbol, "buy", "mkt", qty_half, params={"sl": sl_price, "tp": tp2_price})
