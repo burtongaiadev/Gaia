@@ -18,7 +18,8 @@ class BacktestBroker(IBroker):
         self.balance = initial_balance
         self.trades = []
         self.positions = {} # {symbol: size} - Multi-symbol support
-        self.last_prices = {} # {symbol: price}
+        self.last_prices = {}
+        self.notifier = None # {symbol: price}
         self.current_time = None
         
         # Bracket Management
@@ -69,22 +70,43 @@ class BacktestBroker(IBroker):
         if filled_bracket_ids:
             self.active_orders = [o for o in self.active_orders if o.get('bracket_id') not in filled_bracket_ids]
 
-    def _execute_trade(self, symbol, side, size, price, timestamp, type_str):
-        cost = price * size
-        current_pos = self.positions.get(symbol, 0.0)
+    def set_notifier(self, callback):
+        self.notifier = callback
+
+    async def _execute_trade(self, symbol: str, side: str, qty: float, price: float, type_: str):
+        cost = qty * price
         
+        # Simple execution logic
         if side == "buy":
-            self.positions[symbol] = current_pos + size
+            self.positions[symbol] = self.positions.get(symbol, 0.0) + qty
             self.balance -= cost
         elif side == "sell":
-            self.positions[symbol] = current_pos - size
+            prev_pos = self.positions.get(symbol, 0.0)
+            self.positions[symbol] = prev_pos - qty
             self.balance += cost
             
+        trade_id = str(uuid.uuid4())
         self.trades.append({
-            "symbol": symbol, "side": side, "size": size, 
-            "price": price, "time": timestamp, "type": type_str
+            "id": trade_id,
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": price,
+            "timestamp": datetime.utcnow()
         })
-        logger.info(f"[BACKTEST] FILLED-TRIGGER {side.upper()} {size} {symbol} @ {price} ({type_str})")
+        
+        entry = f"[BACKTEST] FILLED-TRIGGER {side.upper()} {qty} {symbol} @ {price} ({type_})"
+        logger.info(entry)
+        
+        # Notify
+        if self.notifier:
+            try:
+                # Format a nice message
+                icon = "🟢" if side == "buy" else "🔴"
+                msg = f"{icon} Executed: {side.upper()} {qty:.4f} {symbol} @ ${price:.2f}"
+                await self.notifier(msg)
+            except Exception as e:
+                logger.error(f"Notification failed: {e}")
 
     async def place_order(self, symbol: str, side: str, order_type: str, size: float, price: Optional[float] = None, params: Optional[Dict[str, Any]] = None):
         last_price = self.last_prices.get(symbol, 0.0)

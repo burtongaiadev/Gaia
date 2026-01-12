@@ -98,6 +98,12 @@ async def lifespan(app: FastAPI):
         # In real LIVE mode, we would call recovery.reconcile(broker, exchange)
         # In PAPER, our 'exchange' is the empty BacktestBroker, so nothing to reconcile yet.
         
+        # Connect Broker to Telegram (Trades -> Telegram Msg)
+        async def notify_trade(msg: str):
+             if telegram_service:
+                 await telegram_service.broadcast(msg)
+        paper_broker.set_notifier(notify_trade)
+
         telegram_service.set_broker(paper_broker)
         logger.info("PAPER Trading Environment Ready. Waiting for Ticks...")
 
